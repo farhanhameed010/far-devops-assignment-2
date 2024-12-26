@@ -1,0 +1,111 @@
+---
+- name: Install Docker with Version Control
+  hosts: localhost
+  become: true
+  # apt-cache madison docker-ce     check docker version
+  vars:
+    docker_version: "5:27.4.1-1~ubuntu.22.04~jammy"
+    docker_compose_version: "v2.24.5"
+    docker_compose_path: "/usr/local/bin/docker-compose"
+    system_user: "{{ lookup('env', 'USER') }}"
+
+  tasks:
+    #  # Thorough cleanup of Docker repository configuration
+    # - name: Remove all Docker repository configurations
+    #   file:
+    #     path: "{{ item }}"
+    #     state: absent
+    #   with_items:
+    #     - /etc/apt/sources.list.d/docker.list
+    #     - /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+    #     - /etc/apt/keyrings/docker.gpg
+    #     - /etc/apt/trusted.gpg.d/docker.gpg
+    #     - /usr/share/keyrings/docker-archive-keyring.gpg
+    #     - "{{ docker_compose_path }}"
+
+    # - name: Clean apt lists
+    #   command: apt-get clean
+      
+    # - name: Update apt cache
+    #   apt:
+    #     update_cache: yes
+    - name: Install prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        update_cache: yes
+
+    # First remove existing Docker packages if any
+    - name: Remove existing Docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+        state: absent
+        purge: yes
+        autoremove: yes
+
+    # Install specific Docker version
+    - name: Install specific Docker version
+      apt:
+        name: 
+          - "docker-ce={{ docker_version }}"
+          - "docker-ce-cli={{ docker_version }}"
+          - containerd.io
+        state: present
+        update_cache: yes
+        dpkg_options: "force-confdef,force-confold"
+        allow_downgrade: yes
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: "{{ docker_compose_path }}"
+        mode: '0755'
+        force: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ system_user }}"
+        groups: docker
+        append: yes
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Verify installations
+      block:
+        - name: Check Docker version
+          command: docker --version
+          register: docker_version_output
+          changed_when: false
+
+        - name: Check Docker Compose version
+          command: docker-compose --version
+          register: compose_version_output
+          changed_when: false
+
+        - name: Display versions
+          debug:
+            msg:
+              - "Docker version: {{ docker_version_output.stdout }}"
+              - "Docker Compose version: {{ compose_version_output.stdout }}"
